@@ -12,17 +12,29 @@
 
 ## 1. Synopsis
 
-This project consists of replacing the I/O Layer of pgagroal, today highly dependant on [libev library](TODO), for a pgagroal's own implementation of this I/O Layer. The so called I/O Layer consists of an event loop (ev) abstracted by libev. 
+The project consists of replacing the I/O Layer of pgagroal, today highly dependant on [libev library](TODO), for a pgagroal's own implementation of this I/O Layer. The so called I/O Layer is an event loop (ev) abstracted by libev. 
 
-The motivation behind this project is because libev is not being maintained any longer. Therefore we need an efficient (i.e. maintainable, reliable, fast, lightweight, secure and scalable) implementation of an ev that can be maintained by the pgagroal community.
+The motivation behind this project is because libev is not being maintained any longer. Therefore pgagroal needs an efficient (i.e. maintainable, reliable, fast, lightweight, secure and scalable) implementation of an ev that can be maintained by the pgagroal community.
 
 Currently, pgagroal depends on libev to (a) watch for incomming read/write requests from its connections in a non-blocking fashion (I/O multiplexing); (b) launch timer events; and (c) watch signals.
 
-I/O multiplexing in Linux is done with select, poll and, most recently (Linux kernel 2.6) with epoll, which may be used by libev on the background. epoll works by decoupling the monitor registration from the actual monitoring, and does this with an intuitive API, using three simple system calls, one to create an epoll instance, one to add or remove file descriptors to monitor (along with the events to monitor in each file descriptor), and one to actually monitor the file descriptors.
+In Linux, these functionalities may be optimally achieved by using io\_uring (feature introduced in Linux kernel 5.1). io\_uring is a communication channel between a system's application and the kernel by providing an interface to receive notifications when I/O is possible on file descriptors. io\_uring is accessible to system applications through liburing, which is a library that contains helpers for setup of io\_uring. A successful Linux implementation of an efficient ev for pgagroal necessarilly utilizes io\_uring -- as well as other Linux I/O interfaces (e.g. stdio) -- for efficient I/O. For cases where io\_uring may fall short, Linux has other interfaces that may replace it, such as epoll.
 
-I/O multiplexing similar to what is done with epoll can be achieved with io\_uring, which is an asynchronous I/O interface introduced in Linux kernel 5.1. io\_uring provides an interface to receive notifications when I/O is possible on file descriptors, similar to the `epoll_wait` call.
+In FreeBSD, these functionalities may be optimally achieved by using kqueue
 
-A successful implementation of an efficient ev for pgagroal necessarilly utilizes epoll or io\_uring -- as well as other Linux I/O interfaces (e.g. stdio) -- for efficient I/O.
+
+<!-- Details about IO uring should go in details
+
+What is `io_uring`
+- communication channel
+- submission queue (sqe) / completion queue (cqe)
+- no cross-trafic
+
+It functions as an asynchronous I/O interface, by implementing two queues, submission queue (SQE) and a completion queue (CQE). 
+- 
+--!>
+
+
 
 The objective of this proposal is to provide a plan to achieve such implementation, which shall be, at the end of this program, at least as efficient as libev, but fully maintained and controlled by the pgagroal community.
 
@@ -40,11 +52,11 @@ The result of this first phase would be a small footprint ev that suffices for p
 
 For the **Phase 2**, I first propose the definition of tests and profiling (for speed and memory) for pgagroal's new ev, done in different settings, enabling comparison between previous and future versions. 
 
-The idea here is to acurately measure resource utilisation for pgagroal in areas we believe are important for a connection pool, so that we can make sure that pgagroal is going on the direction we believe is correct. 
+The idea here is to acurately measure resource utilization for pgagroal in areas we believe are important for a connection pool, so that we can make sure that pgagroal is going on the direction we believe is correct. 
 
 The specific benchmark criteria (performance metrics) should be discussed with the community prior to the development of the strategy, but this should include attempts to measure latency, throughput, CPU usage, and memory footprint.
 
-This will enable the identification of bottlenecks and places where pgagroal can benefit from optimizations while being able to measure potential optimizations implementations. 
+Measuring resource utilization will enable the identification of bottlenecks and places where pgagroal can benefit from optimizations while enabling to measure potential optimizations implementations. 
 
 Second, I propose diving deeper into improvements that could be made to the simple ev implementation of the previous phase, here I intend to investigate the potential necessary changes of structure of the main code, considering (a) the usage of io\_uring to replace epoll or to complement its work, (b) the different configurations for epoll (e.g. edge vs. level trigger), (c) other optimizations (e.g. cache performance, memory layout, reducing system calls, vectorization).
 
@@ -73,6 +85,35 @@ struct ev_periodic;
 void ev_io_init();
 ...
 ```
+
+Refs.: [Kernel Recipes 2019 - Faster IO through io_uring](https://www.youtube.com/watch?v=-5T4Cjw46ys)
+
+How to work with I/O uring.
+```Filling in a new sqe
+
+struct io_uring_sqe *sqe;
+unsigned index, tail;
+
+tail = ring->tail;
+read_barrier();
+/* SQE ring full */
+if (tail + 1 == ring->head)
+    return FULL;
+
+index = tail & ring->sq_ring_mask;
+sqe = &ring->sqes[index];
+/* fill in sqe */
+
+ring->array[index] = index;
+write_barrier();
+
+ring->tail = tail+1;
+write_barrier();
+
+```
+
+
+As for signals, `io_uring_enter` receives a set of signals `sigset_t *sigset`, which makes it an easy . [CONFIRMAR]
 
 
 ### 2.2. Phase 2 Details
