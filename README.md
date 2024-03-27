@@ -18,9 +18,11 @@ The motivation behind this project is because libev is not being maintained any 
 
 Currently, pgagroal depends on libev to (a) watch for incomming read/write requests from its connections in a non-blocking fashion (I/O multiplexing); (b) launch timer events; and (c) watch signals.
 
-I/O multiplexing in Linux is done with select, poll and, most recently (kernel version 2.6) with epoll, which is used by libev on the background. epoll works by decoupling the monitor registration from the actual monitoring, and does this with an intuitive API, using three simple system calls, one to create an epoll instance, one to add or remove file descriptors to monitor (along with the events to monitor in each file descriptor), and one to actually monitor the file descriptors.
+I/O multiplexing in Linux is done with select, poll and, most recently (Linux kernel 2.6) with epoll, which may be used by libev on the background. epoll works by decoupling the monitor registration from the actual monitoring, and does this with an intuitive API, using three simple system calls, one to create an epoll instance, one to add or remove file descriptors to monitor (along with the events to monitor in each file descriptor), and one to actually monitor the file descriptors.
 
-A successful implementation of an efficient ev for pgagroal necessarilly utilizes epoll as well as other linux I/O features for efficient I/O.
+I/O multiplexing similar to what is done with epoll can be achieved with io\_uring, which is an asynchronous I/O interface introduced in Linux kernel 5.1. io\_uring provides an interface to receive notifications when I/O is possible on file descriptors, similar to the `epoll_wait` call.
+
+A successful implementation of an efficient ev for pgagroal necessarilly utilizes epoll or io\_uring -- as well as other Linux I/O interfaces (e.g. stdio) -- for efficient I/O.
 
 The objective of this proposal is to provide a plan to achieve such implementation, which shall be, at the end of this program, at least as efficient as libev, but fully maintained and controlled by the pgagroal community.
 
@@ -28,7 +30,7 @@ The objective of this proposal is to provide a plan to achieve such implementati
 
 As mentioned before, my objectives with this proposal is to implement an efficient ev for pgagroal. 
 
-In order to accomplish this, I could benefit of dividing the implementation into two phases: (a) Experimentation (Phase 1); (b) Continuous Implementation and Profiling Loop (Phase 2).
+In order to accomplish this, I could benefit of dividing the implementation into two phases: (a) Experimentation (Phase 1); (b) Continuous Implementation and Profiling (Phase 2).
 
 For the **Phase 1**, I propose the implementation of ev.h and ev.c containing a simple abstraction for an ev (with `epoll`) that closely follows (in a first moment) the interface used by pgagroal with libev. 
 
@@ -44,16 +46,18 @@ The specific benchmark criteria (performance metrics) should be discussed with t
 
 This will enable the identification of bottlenecks and places where pgagroal can benefit from optimizations while being able to measure potential optimizations implementations. 
 
-Second, I propose diving deeper into improvements that could be made to the simple ev implementation of the previous phase, here I intend to investigate the potential necessary changes of structure of the main code, considering (a) the usage of io\_uring, (b) the different configurations for epoll (e.g. edge vs. level trigger), (c) cache performance, (d) optimizations with memory layout, (e) reducing system calls, (f) vectorization of read and writes.
+Second, I propose diving deeper into improvements that could be made to the simple ev implementation of the previous phase, here I intend to investigate the potential necessary changes of structure of the main code, considering (a) the usage of io\_uring to replace epoll or to complement its work, (b) the different configurations for epoll (e.g. edge vs. level trigger), (c) other optimizations (e.g. cache performance, memory layout, reducing system calls, vectorization).
 
 The tests and the profiling should lead the development after each commit.
 
 
-## . Phase 1 Details
+### 2.1. Phase 1 Details
 
-pgagroal uses a default main loop configuration for libev, which uses epoll and io\_uring where needed. 
+Let's first understand how pgagroal uses libev so we can replace the library.
 
-This main loop is fed by pgagroal main code with main file descriptors, file descriptor for management and file descriptor for postgres server. 
+First, pgagroal calls `ev_default_loop` to set the `struct ev_loop* main_loop` with a configuration set by `pgagroal_libev`. This functionn reads the configuration and decides the backend option that will be passed to `ev_default_loop`, which is one of the I/O multiplexing options available to Linux. Depending on configuration engine set in pgagroal's config. However, this step is not necessary as only epoll and/or io\_uring will be used.
+
+This main loop is fed by pgagroal main code with signals watchers, main file descriptors, file descriptor for management, file descriptor for postgres server, file descriptors for metrics, and with timer watchers. 
 
 For each monitored file descriptor, there is a callback defined by pgagroal and called by the event loop.
 
@@ -71,7 +75,7 @@ void ev_io_init();
 ```
 
 
-## . Phase 2 Details
+### 2.2. Phase 2 Details
 
 With testing and profiling I intend to achieve a way to measure how the implementation of the ev is evolving in comparison to previous pgagroal versions and to previous versions.
 
@@ -79,7 +83,18 @@ Tests could be achieved through testing frameworks in C or just by testing the b
 
 Profiling could be achieved through the usage of linux tools such as gprof and perf. These tools could be wrapped around Python scripts to enable easy data parsing, storage and analysis.
 
-## . Deliverables
+Further, this profiling should render insights for the following optimizations.
+
+#### 2.2.a. Usage of io\_uring [TBD]
+
+
+#### 2.2.b. Different configurations for epoll [TBD]
+
+
+#### 2.2.c. Further optimizations [TBD]
+
+
+## 3. Deliverables [TBD]
 
 **Phase 1**
 - Fully functional event loop 
@@ -89,7 +104,7 @@ Profiling could be achieved through the usage of linux tools such as gprof and p
 - Investigation of Optimizations
 
 
-## . Timeline
+## 4. Timeline [TBD]
 
 Below I set a timeline for 22 weeks.
 
