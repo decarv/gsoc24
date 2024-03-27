@@ -40,16 +40,16 @@ For the **Phase 2**, I first propose the definition of tests and profiling (for 
 
 The idea here is to acurately measure resource utilisation for pgagroal in areas we believe are important for a connection pool, so that we can make sure that pgagroal is going on the direction we believe is correct. 
 
-This will enable the identification of bottlenecks and places where pgagroal can benefit from optimizations while being able to measure potential optimizations implementations. 
+The specific benchmark criteria (performance metrics) should be discussed with the community prior to the development of the strategy, but this should include attempts to measure latency, throughput, CPU usage, and memory footprint.
 
-The specific benchmark criteria (performance metrics) should be discussed with the community prior to the development of the strategy.
+This will enable the identification of bottlenecks and places where pgagroal can benefit from optimizations while being able to measure potential optimizations implementations. 
 
 Second, I propose diving deeper into improvements that could be made to the simple ev implementation of the previous phase, here I intend to investigate the potential necessary changes of structure of the main code, considering (a) the usage of io\_uring, (b) the different configurations for epoll (e.g. edge vs. level trigger), (c) cache performance, (d) optimizations with memory layout, (e) reducing system calls, (f) vectorization of read and writes.
 
 The tests and the profiling should lead the development after each commit.
 
 
-## . EV Implementation Details
+## . Phase 1 Details
 
 pgagroal uses a default main loop configuration for libev, which uses epoll and io\_uring where needed. 
 
@@ -61,10 +61,17 @@ None of the callbacks should be modified at a first glance, and the new implemen
 
 Therefore, the **Phase 1** implementation depends on me knowing where libev functions are used throughout the code and replacing them with our own implementation.
 
-For example, when a connection is accepted through pgagroal the `accept_main_cb` callback is called to register a client. At this point, the 
+This means that implementation should be provided for libev structs and functions, such as:
+
+```c
+struct ev_io;
+struct ev_periodic;
+void ev_io_init();
+...
+```
 
 
-## . Testing and Profiling Implementation Details
+## . Phase 2 Details
 
 With testing and profiling I intend to achieve a way to measure how the implementation of the ev is evolving in comparison to previous pgagroal versions and to previous versions.
 
