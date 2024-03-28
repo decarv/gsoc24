@@ -20,20 +20,7 @@ Currently, pgagroal depends on libev to (a) watch for incomming read/write reque
 
 In Linux, these functionalities may be optimally achieved by using io\_uring (feature introduced in Linux kernel 5.1). io\_uring is a communication channel between a system's application and the kernel by providing an interface to receive notifications when I/O is possible on file descriptors. io\_uring is accessible to system applications through liburing, which is a library that contains helpers for setup of io\_uring. A successful Linux implementation of an efficient ev for pgagroal necessarilly utilizes io\_uring -- as well as other Linux I/O interfaces (e.g. stdio) -- for efficient I/O. For cases where io\_uring may fall short, Linux has other interfaces that may replace it, such as epoll.
 
-In FreeBSD, these functionalities may be optimally achieved by using kqueue
-
-
-<!-- Details about IO uring should go in details
-
-What is `io_uring`
-- communication channel
-- submission queue (sqe) / completion queue (cqe)
-- no cross-trafic
-
-It functions as an asynchronous I/O interface, by implementing two queues, submission queue (SQE) and a completion queue (CQE). 
-- 
---!>
-
+In FreeBSD, these functionalities may be optimally achieved by using kqueue. [COMPLETE]
 
 
 The objective of this proposal is to provide a plan to achieve such implementation, which shall be, at the end of this program, at least as efficient as libev, but fully maintained and controlled by the pgagroal community.
@@ -44,26 +31,24 @@ As mentioned before, my objectives with this proposal is to implement an efficie
 
 In order to accomplish this, I could benefit of dividing the implementation into two phases: (a) Experimentation (Phase 1); (b) Continuous Implementation and Profiling (Phase 2).
 
-For the **Phase 1**, I propose the implementation of ev.h and ev.c containing a simple abstraction for an ev (with `epoll`) that closely follows (in a first moment) the interface used by pgagroal with libev. 
+For the *Phase 1*, I propose the implementation of io.h containing a simple abstraction for an ev (with io\_uring, for Linux, and with kqueue, for FreeBSD). 
 
-This would allow the main code to be changed only slightly, where it makes sense, avoiding unnecessaryly redesigning the main code and understanding where I would have to modify it in order to connect it to an ev interface. 
+The result of this first phase would be a maintainable and small footprint ev that suffices for pgagroal specific uses, potentially (but not necessarily) resulting in minimal changes in functions and behavior of the main code -- as io.h would work as an interface for watching file descriptors, timers and signals.
 
-The result of this first phase would be a small footprint ev that suffices for pgagroal specific uses, resulting in minimal changes in function signatures and behavior of the main code. 
+For the *Phase 2*, I propose the definition of tests and profiling (for speed and memory) for pgagroal's new ev, done in different settings, enabling comparison between previous and future versions. 
 
-For the **Phase 2**, I first propose the definition of tests and profiling (for speed and memory) for pgagroal's new ev, done in different settings, enabling comparison between previous and future versions. 
-
-The idea here is to acurately measure resource utilization for pgagroal in areas we believe are important for a connection pool, so that we can make sure that pgagroal is going on the direction we believe is correct. 
+The idea here is to acurately measure resource utilization for pgagroal in areas we believe are important, so that we can make sure that the new implementation of pgagroal is actually going on the right direction.
 
 The specific benchmark criteria (performance metrics) should be discussed with the community prior to the development of the strategy, but this should include attempts to measure latency, throughput, CPU usage, and memory footprint.
 
 Measuring resource utilization will enable the identification of bottlenecks and places where pgagroal can benefit from optimizations while enabling to measure potential optimizations implementations. 
 
-Second, I propose diving deeper into improvements that could be made to the simple ev implementation of the previous phase, here I intend to investigate the potential necessary changes of structure of the main code, considering (a) the usage of io\_uring to replace epoll or to complement its work, (b) the different configurations for epoll (e.g. edge vs. level trigger), (c) other optimizations (e.g. cache performance, memory layout, reducing system calls, vectorization).
-
-The tests and the profiling should lead the development after each commit.
+The measurements made in propose diving deeper into improvements that could be made to the simple ev implementation of the previous phase. Here I intend to investigate the potential necessary changes of structure of the main code, considering other optimizations (e.g. cache performance, memory layout, reducing system calls, vectorization).
 
 
 ### 2.1. Phase 1 Details
+
+The Phase 1 implementation depends on me knowing how libev functions are used throughout the code so I can replace them with our own implementation.
 
 Let's first understand how pgagroal uses libev so we can replace the library.
 
@@ -73,11 +58,9 @@ This main loop is fed by pgagroal main code with signals watchers, main file des
 
 For each monitored file descriptor, there is a callback defined by pgagroal and called by the event loop.
 
-None of the callbacks should be modified at a first glance, and the new implementation should seemlessly allow for keeping the original structure.
+None of the callbacks should be modified at a first glance, and the new implementation should seemlessly allow for keeping the original callback structure.
 
-Therefore, the **Phase 1** implementation depends on me knowing where libev functions are used throughout the code and replacing them with our own implementation.
-
-This means that implementation should be provided for libev structs and functions, such as:
+This means that implementation should be replace libev structs and functions, such as:
 
 ```c
 struct ev_io;
@@ -85,6 +68,17 @@ struct ev_periodic;
 void ev_io_init();
 ...
 ```
+
+#### 2.1.1. Linux implementation
+Details about IO uring should go in details
+
+What is `io_uring`
+- communication channel
+- submission queue (sqe) / completion queue (cqe)
+- no cross-trafic
+
+It functions as an asynchronous I/O interface, by implementing two queues, submission queue (SQE) and a completion queue (CQE). 
+- 
 
 Refs.: [Kernel Recipes 2019 - Faster IO through io_uring](https://www.youtube.com/watch?v=-5T4Cjw46ys)
 
@@ -113,7 +107,11 @@ write_barrier();
 ```
 
 
-As for signals, `io_uring_enter` receives a set of signals `sigset_t *sigset`, which makes it an easy . [CONFIRMAR]
+As for signals, `io_uring_enter` receives a set of signals `sigset_t *sigset`, which makes it an easy . [TODO: CONFIRMAR]
+
+#### 2.1.2. FreeBSD implementation
+
+[TODO]
 
 
 ### 2.2. Phase 2 Details
@@ -126,24 +124,28 @@ Profiling could be achieved through the usage of linux tools such as gprof and p
 
 Further, this profiling should render insights for the following optimizations.
 
-#### 2.2.a. Usage of io\_uring [TBD]
+#### 2.2.1. Definition of a testsuite
 
+[TODO]
 
-#### 2.2.b. Different configurations for epoll [TBD]
+#### 2.2.2. Profiling the code
 
+[TODO]
 
-#### 2.2.c. Further optimizations [TBD]
+#### 2.2.c. Further optimizations
 
+[TODO]
 
-## 3. Deliverables [TBD]
+## 3. Deliverables
 
 **Phase 1**
-- Fully functional event loop 
+Week X: Basic I/O foundation
+Week Y: io_uring - Successful calls
+Week Z: io_uring - Failed calls
+[TODO]
 
 **Phase 2**
-- Testing and Profiling Strategy and Setup
-- Investigation of Optimizations
-
+[TODO]
 
 ## 4. Timeline [TBD]
 
@@ -152,16 +154,16 @@ Below I set a timeline for 22 weeks.
 | Week       | Date             | Description |
 |------------|------------------|-------------|
 | 1 & 2      | May 01 - May 12  | This is a community bonding period, we could set up a call to know each other, to talk about pgagroal (the history behind it and the future of the project) and to talk about this project in specific. This is likely the start of Phase 1. |
-| 3 & 4      | May 13 - May 27  | Work on the first version of the ev. |
-| 4 & 5      | May 27 - June 09 | Deliver the first version of an ev, fully working. |
-| 6 & 7 & 8  | June 10 - June 30 | Work on testing and profiling strategy and setup. |
+| 3 & 4      | May 13 - May 27  | Phase 1: [TODO]  |
+| 4 & 5      | May 27 - June 09 | Phase 1: [TODO] |
+| 6 & 7 & 8  | June 10 - June 30 | Phase 1: [TODO] |
 |            | July 01 - July 14 | The midterm evaluations, from 8 to 12. I intend to visit my family during the mid-year holidays. I will be reachable and responding to emails, but I intend to mostly rest around this time. |
-| 9 & 10    | July 15 - July 28 | Investigation of improvements to the ev. |
-| 11 & 12 & 13   | July 29 - August 18 | |
-|            | August 19 - September 1   | |
-| 14 & 15   | September 2 - September 15 | |
-| 16 & 17    | September 16 - September 29 | |
-| 18 & 19    | September 30 - October 6 | |
-| 20 & 21 & 22   | October 7 - November 3 | |
+| 9 & 10    | July 15 - July 28 | Phase 2: [TODO] |
+| 11 & 12 & 13   | July 29 - August 18 | Phase 2: [TODO] |
+|            | August 19 - September 1   | Phase 2: [TODO] |
+| 14 & 15   | September 2 - September 15 | Phase 2: [TODO] |
+| 16 & 17    | September 16 - September 29 | Phase 2: [TODO] |
+| 18 & 19    | September 30 - October 6 | Phase 2: [TODO] |
+| 20 & 21 & 22   | October 7 - November 3 | Phase 2: [TODO] |
 |            | November 4 | Deadline to submit final work product and final evaluation. |
 
