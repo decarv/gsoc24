@@ -8,7 +8,7 @@
 **Languages:** Portuguese, English<br>
 **Country:** Brazil (GMT -03:00)<br>
 **Who Am I:** I earned a Bachelor's degree in Computer Science from the University of São Paulo (2020 - 2023) and currently work as a Backend Software Engineer at a medium-scale Investment Fund. Throughout my bachelor's program, I did bunch of different stuff, from algorithms and data structures, to systems engineering, to machine learning theory and applications, computer vision, computer graphics and application development and benchmarking. Nevertheless, the things that live in my heart are systems engineering, performance-oriented development and computer graphics, which are things I rarely have the opportunity to do. Therefore, I see contributing to open-source as a great way to stay close to what makes me happy in software engineering and, of course, to be able to provide good software for free to other humans. Specifically, my interest in pgagroal stems from its system program nature and its promise of high-performance — subjects I'm passionate about, especially when it involves optimizing for speed (not that I know that much, it's just that I want to learn about it that much). My main objective with this project is to learn from the community and assist pgagroal in achieving unparalleled performance among connection pools.<br>
-**Contributions:** [#408](https://github.com/agroal/pgagroal/pull/408), [#411](https://github.com/agroal/pgagroal/pull/411), [#427](https://github.com/agroal/pgagroal/pull/427)<br>
+**Contributions:** [#408](https://github.com/agroal/pgagroal/pull/408), [#411](https://github.com/agroal/pgagroal/pull/411), [#427](https://github.com/agroal/pgagroal/pull/427), [#431](https://github.com/agroal/pgagroal/pull/431)<br>
 
 ## 1. Synopsis
 
@@ -43,14 +43,37 @@ The specific benchmark criteria (performance metrics) should be discussed with t
 
 Measuring resource utilization will enable the identification of bottlenecks and places where pgagroal can benefit from optimizations while enabling to measure potential optimizations implementations. 
 
-The measurements made in propose diving deeper into improvements that could be made to the simple ev implementation of the previous phase. Here I intend to investigate the potential necessary changes of structure of the main code, considering other optimizations (e.g. cache performance, memory layout, reducing system calls, vectorization).
+The measurements made in propose diving deeper into improvements that could be made to the simple ev implementation of the previous phase. Here I intend to investigate the potential necessary changes of structure of the main code, considering other optimizations (e.g. `io_uring_sqe` fields, kernel side polling, cache performance, memory layout, reducing system calls, vectorization).
 
 
 ### 2.1. Phase 1 Details
 
-The Phase 1 implementation depends on me knowing how libev functions are used throughout the code so I can replace them with our own implementation.
+The Phase 1 implementation depends on me knowing how io\_uring and kqueue work, and me knowing how libev functions are used throughout the code, so I know how they be replaced.
 
-Let's first understand how pgagroal uses libev so we can replace the library.
+#### 2.1.1. Linux implementation
+
+io\_uring is a communication channel between the application and the kernel. It works by placing submission events and completion events into two queues (ring buffers).
+These two queues are the submission queue and a completion queue, and they function as an asynchronous I/O interface.
+
+Much of the complexity of managing these data structures is abstracted by a library called liburing.
+
+Ref.: https://unixism.net/loti/tutorial/sq_poll.html
+
+
+```c
+
+
+```
+
+As for signals, `io_uring_enter` receives a set of signals `sigset_t *sigset`, which makes it an easy . [TODO: CONFIRMAR]
+
+
+#### 2.1.2. FreeBSD Implementation
+
+[todo: complete]
+
+
+#### 2.1.3. What will io\_uring and kqueue replace
 
 First, pgagroal calls `ev_default_loop` to set the `struct ev_loop* main_loop` with a configuration set by `pgagroal_libev`. This functionn reads the configuration and decides the backend option that will be passed to `ev_default_loop`, which is one of the I/O multiplexing options available to Linux. Depending on configuration engine set in pgagroal's config. However, this step is not necessary as only epoll and/or io\_uring will be used.
 
@@ -58,57 +81,45 @@ This main loop is fed by pgagroal main code with signals watchers, main file des
 
 For each monitored file descriptor, there is a callback defined by pgagroal and called by the event loop.
 
-None of the callbacks should be modified at a first glance, and the new implementation should seemlessly allow for keeping the original callback structure.
+The callbacks should be only slightly modified at a first glance, and the new implementation should seemlessly allow for keeping the original callback structure.
 
-This means that implementation should be replace libev structs and functions, such as:
+This means that implementation should be replace libev structs and functions.
+
 
 ```c
 struct ev_io;
-struct ev_periodic;
 void ev_io_init();
-...
+void ev_loop();
 ```
+These work by abstracting the whole ev layer.
 
-#### 2.1.1. Linux implementation
-Details about IO uring should go in details
+**Linux implementation.**
+The implementation is straightforward, with `io_uring_wait_cqe` wrapped on a loop and a call to the `cqe->user_data` that can potentially hold a callback.
+Every process should have it's own loop and the loop could be created as soon as the process is forked.
 
-What is `io_uring`
-- communication channel
-- submission queue (sqe) / completion queue (cqe)
-- no cross-trafic
 
-It functions as an asynchronous I/O interface, by implementing two queues, submission queue (SQE) and a completion queue (CQE). 
-- 
 
-Refs.: [Kernel Recipes 2019 - Faster IO through io_uring](https://www.youtube.com/watch?v=-5T4Cjw46ys)
-
-How to work with I/O uring.
-```Filling in a new sqe
-
-struct io_uring_sqe *sqe;
-unsigned index, tail;
-
-tail = ring->tail;
-read_barrier();
-/* SQE ring full */
-if (tail + 1 == ring->head)
-    return FULL;
-
-index = tail & ring->sq_ring_mask;
-sqe = &ring->sqes[index];
-/* fill in sqe */
-
-ring->array[index] = index;
-write_barrier();
-
-ring->tail = tail+1;
-write_barrier();
-
+```c
+struct ev_periodic;
+void ev_periodic_init();
+void ev_periodic_start();
 ```
+These struct and functions work by issuing periodic callbacks in regular intervals [todo complete].
+
+**Linux implementation.** 
+These could be accomplished with timeout commands, with `io_uring_prep_timeout`, but this approach should be further evaluated. 
+The upside here is to keep the simplicity in implementation with io\_uring.
+Since everything is going to be wrapped around a while loop and I/O will wait on cqes, timeouts can be abstracted to work as periodic task (isn't this all they are anyways?).
+
+**FreeBSD implementation.**
+[todo complete]
 
 
-As for signals, `io_uring_enter` receives a set of signals `sigset_t *sigset`, which makes it an easy . [TODO: CONFIRMAR]
-
+```c
+void ev_fork_loop();
+```
+This function is called whenever a fork() call is made, so the ev is duplicated.
+With io\_uring there is no need to duplicate the ev, so this call will not exist anymore.
 #### 2.1.2. FreeBSD implementation
 
 [TODO]
@@ -129,7 +140,7 @@ Further, this profiling should render insights for the following optimizations.
 [TODO]
 
 #### 2.2.2. Profiling the code
-
+The timeout command supp
 [TODO]
 
 #### 2.2.c. Further optimizations
