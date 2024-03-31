@@ -174,27 +174,27 @@ I try to leave room for flexibility in the timeline to accomodate unexpected cha
 |------------|------------------|-------------|
 |1 & 2|May 01 - May 14|Community bonding period: Set up a call to know each other, discuss pgagroal's history and future, and talk about the specifics of this project. Begin Phase 1 with a discussion of the first design of the code.|
 |3 & 4|May 15 - May 28|Phase 1 for Linux: Start on the I/O Foundation by designing and implementing a simple io_uring loop for core I/O operations, marking the initial replacement of libev functionalities.|
-|5 & 6|May 29 - June 11|Phase 1 for Linux: Continue developing the I/O Foundation, refining the io_uring integration for I/O other than ev loop.|
+|5 & 6|May 29 - June 11|Phase 1 for Linux: Continue developing the I/O Foundation, refining the io_uring integration for I/O other than ev loop, try to identify potential room for more advanced io\_uring techniques.|
 |7 & 8|June 12 - June 25|Phase 1 for Linux: Finish the I/O Foundation by integrating advanced networking io\_uring features.|
 ||June 26 - July 09|Midterm evaluations and personal time. Planning to visit family during mid-year holidays, with limited availability but reachable via email.|
 |9 & 10|July 10 - July 23|Phase 1 for FreeBSD: Begin working on the I/O foundation for FreeBSD, focusing on integrating and adapting to FreeBSD's system specifics.|
 |11 & 12|July 24 - August 06|Phase 1 for FreeBSD: Continue developing the I/O foundation.|
 |13 & 14|August 07 - August 20|Phase 1 for FreeBSD: Finish the I/O Foundation, ensuring compatibility and efficiency.|
-|15 & 16|August 21 - September 03|Phase 2: Design and implement behavior tests for the ev loop replaced code to ensure functionality and stability. |
-|17 & 18|September 04 - September 17|Phase 2: Fix potential issues with the code and expand tests if necessary. Focus on stress testing. |
-|19 & 20|September 18 - October 01|Phase 2: Design and implement strategy to profile code. Identify code bottlenecks and create strategy to optimize code.|
-|21 & 22|October 02 - October 15|Phase 2: Implement optimization strategies identified in the previous phase. Final testing of all implementations for both Linux and FreeBSD.|
-|23 & 24 & 25|October 16 - November 04|Finalize documentation, prepare a comprehensive report summarizing the development process, challenges faced, solutions implemented, and future work directions. Ensure all code is well-commented, and repository is organized for easy navigation. Final preparations for project submission.|
+|15 & 16|August 21 - September 03|Phase 2: Design and implement behavior tests and stress tests for the ev loop replaced code to ensure functionality and stability. |
+|17 & 18|September 04 - September 17|Phase 2: Fix potential issues with the code found in previous weeks and expand tests if necessary. |
+|19 & 20|September 18 - October 01|Phase 2: Design and implement strategy to profile code. Identify code bottlenecks and define strategy to optimize code based on findings.|
+|21 & 22 & 23|October 02 - October 22|Phase 2: Implement optimization strategies identified in the previous phase. Final testing of all implementations for both Linux and FreeBSD. Make sure everything is perfect. |
+|24 & 25|October 16 - November 04|Finalize documentation, prepare a comprehensive report summarizing the development process, challenges faced, solutions implemented, and future work directions. Ensure all code is well-commented, and repository is organized for easy navigation. Final preparations for project submission.|
 ||November 04|Deadline to submit final work product and final evaluation.|
 
 
 ## 4. References
 
-[ca83a] https://developers.redhat.com/articles/2023/04/12/why-you-should-use-iouring-network-io
-[cc65b] https://unixism.net/
-[6a59b] https://www.youtube.com/watch?v=-5T4Cjw46ys
-[5dba7]
-[11c26] https://github.com/axboe/liburing/wiki/io_uring-and-networking-in-2023
-[eac27] https://unixism.net/loti/tutorial/webserver_liburing.html
-[f38aa] https://lwn.net/Articles/908268/
-[a6a94] https://stackoverflow.com/questions/65820/unit-testing-c-code
+[ca83a] https://developers.redhat.com/articles/2023/04/12/why-you-should-use-iouring-network-io <br>
+[cc65b] https://unixism.net/<br>
+[6a59b] https://www.youtube.com/watch?v=-5T4Cjw46ys<br>
+[5dba7] <br>
+[11c26] https://github.com/axboe/liburing/wiki/io_uring-and-networking-in-2023<br>
+[eac27] https://unixism.net/loti/tutorial/webserver_liburing.html<br>
+[f38aa] https://lwn.net/Articles/908268/<br>
+[a6a94] https://stackoverflow.com/questions/65820/unit-testing-c-code<br>
