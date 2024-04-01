@@ -111,10 +111,10 @@ void ev_io_init();
 void ev_loop();
 ```
 
-> Linux implementation.
+Linux implementation.
 The implementation is straightforward, with `io_uring_wait_cqe` wrapped around a loop and a call to the `cqe->user_data` that can potentially hold a struct containing a callback. Every process should have its own loop, and the loop could be created as soon as the process is forked.
 
-> FreeBSD implementation.
+FreeBSD implementation.
 The implementation should also be straightforward: create a kqueue, set up a monitoring event for readability on the specified file descriptors, and then enter an infinite loop. When an event is detected, it checks for errors and, if none occur, determines the type of event (readable or writable) before invoking the callback function associated with the watcher.
 
 ##### Periodic Event Handling
@@ -127,10 +127,10 @@ void ev_periodic_init();
 void ev_periodic_start();
 ```
 
-> Linux implementation.
+Linux implementation.
 This could be accomplished with timeout commands, with `io_uring_prep_timeout`, but this approach should be further evaluated. The upside here is to keep the implementation simple with io_uring. Since everything is going to be wrapped around a while loop and I/O will wait on cqes, timeouts can be abstracted to work as periodic tasks (isn't this all they are, anyways?).
 
-> FreeBSD implementation.
+FreeBSD implementation.
 FreeBSD's implementation will leverage kqueue's timer events to achieve similar periodic functionality. Setting up timer events in kqueue involves specifying EVFILT_TIMER filters in kevent calls, allowing pgagroal to execute periodic tasks effectively within the event loop.
 
 ##### Signal Watchers
@@ -142,10 +142,10 @@ struct ev_signal;
 void ev_signal_init();
 ```
 
-> Linux implementation.
+Linux implementation.
 This can be accomplished by using `signalfd` along with io_uring. This way, we can handle signal events in the same asynchronous event loop used for I/O operations.
 
-> FreeBSD implementation.
+FreeBSD implementation.
 kqueue can monitor signal events directly, without needing a separate file descriptor, by leveraging `EVFILT_SIGNAL` as the filter.
 
 ##### Fork Handling
