@@ -1,4 +1,4 @@
-# GSoC Proposal - PostgreSQL: pgagroal
+# [PostgreSQL] pgagroal: I/O layer
 
 ## 0. Contributor Information
 
@@ -73,21 +73,9 @@ Key to the FreeBSD implementation will be leveraging kqueue's strengths, such as
 
 #### 2.1.3. Implementation Details
 
-As stated above, the replacement of pgagroal's I/O layer will mainly mean creating a new event loop for pgagroal's, and may require a redesign of the existing code, 
-because of how these event API's are designed.
-This should happen in the main.c, worker.c, pipeline.c, prometheus.c, the respective headers, and potentially others files. 
-They all use libev structs and functions for I/O and interacting with an event loop.
-Therefore, their code will be redesigned to work with the new format.
-
-Since it is intended for pgagroal to support Linux and FreeBSD, it is evident that pgagroal could benefit from wrapping the same interface for each implementation and using the same interface throughout the code.
-Nevertheless, maintaining the same interface for both Linux and FreeBSD seems unatainable given the differences of both APIs, despite their similarities (both have notification event data structures shared between kernel and userspace). 
-The implementation, thus, would have to :
-
-#### 2.1.3. Implementation Details
-
 As stated above, the replacement of pgagroal's I/O layer will primarily involve creating a new event loop for pgagroal and may require a redesign of the existing code due to the design of these event APIs. This should occur in main.c, worker.c, pipeline.c, prometheus.c, the respective headers, and potentially other files. They all use libev structs and functions for I/O and interacting with an event loop. Therefore, their code will be redesigned to work with the new format.
 
-Since it is intended for pgagroal to support both Linux and FreeBSD, it is clear that pgagroal could benefit from wrapping the same interface for each implementation and using this interface throughout the code. Nevertheless, maintaining the same interface for both Linux and FreeBSD seems unattainable given the differences in both APIs, despite their similarities (both have notification event data structures shared between kernel and userspace). The implementation, thus, would have to be:
+Since it is intended for pgagroal to support both Linux and FreeBSD, it is clear that pgagroal could benefit from wrapping the same interface for each implementation and using this interface throughout the code. Nevertheless, maintaining the same interface for both Linux and FreeBSD seems unattainable given the differences in both APIs, despite their similarities (both have notification event data structures shared between kernel and userspace). The implementation, thus, would have to follow the recipe:
 
 ```c
 #ifdef __linux__
