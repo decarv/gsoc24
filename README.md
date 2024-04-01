@@ -27,21 +27,17 @@ The objective of this proposal is to provide a plan to achieve such efficient im
 ## 2. Proposal
 
 As mentioned before, my objectives with this proposal are to implement an efficient event loop for pgagroal. 
-In order to accomplish this, I could benefit from dividing the implementation into two phases: (a) Experimentation (Phase 1); (b) Continuous Implementation and Profiling (Phase 2).
+In order to accomplish this, I could benefit from dividing the implementation into two phases: (a) Experimentation (Phase 1); (b) Testing and Continuous Refactoring (Phase 2).
 
 For *Phase 1*, I propose the implementation of an interface containing a simple abstraction for an event loop (with io_uring, for Linux, and with kqueue, for FreeBSD).
 
-The result of this first phase would be a maintainable and small footprint event loop that suffices for pgagroal specific uses, potentially (but not necessarily) resulting in minimal changes in functions and behavior of the main code -- as the implementation would work as an interface for watching file descriptors, timers, and signals.
+The result of this first phase would be a maintainable and small footprint event loop that suffices for pgagroal specific uses, potentially resulting in minimal changes in functions and behavior of the existing code -- as the implementation would work as an interface used by the implemented code and, only where necessary, have behaviour modified.
 
-For *Phase 2*, I propose the definition of tests and profiling (for speed and memory) for pgagroal's new event loop, done in different settings, enabling comparison between previous and future versions.
+For *Phase 2*, I propose the creation of functional tests, for testing functional requirements of the connection pool, and performance tests, for measuring resource utilization for pgagroal under different workloads.
 
-The idea here is to accurately measure resource utilization for pgagroal in areas we believe are important, so that we can ensure that the new implementation of pgagroal is actually going in the right direction.
+Functional tests would measure correctness of the new event loop implementation, while the performance tests would guarantee the responsiveness and stability of the new implementation.
 
-The specific benchmark criteria (performance metrics) should be discussed with the community prior to the development of the strategy, but this should include attempts to measure latency, throughput, CPU usage, and memory footprint.
-
-Measuring resource utilization will enable the identification of bottlenecks and places where pgagroal can benefit from optimizations while allowing for the measurement of potential optimizations implementations.
-
-The measurements made propose diving deeper into improvements that could be made to the simple event loop implementation of the previous phase. Here I intend to investigate the potential necessary changes in the structure of the main code, considering other optimizations (e.g., reducing system calls, investigating new features introduced in `io_uring_sqe` fields, kernel-side polling, cache performance, memory layout, vectorization).
+Since the intention of this phase is to improve an experimental implementation, the tests would help achieve the desired functionality and would ensure that refactoring efforts would not introduce performance regressions.
 
 ### 2.1. Phase 1 Details
 
@@ -55,7 +51,8 @@ All of pgagroal's I/O layer can benefit from io_uring operations, such as writin
 
 A simple webserver example can be found at [3], and pgagroal's event loop can use the same structure.
 
-io_uring can be used in the server as a replacement for epoll, but this is not as straightforward as it may seem, and there is a lot of room to further optimize the code by using io_uring code and its new features. [4]
+io_uring can be used in the server as a replacement for epoll, but this is not as straightforward as it may seem, and there is a lot of room to further optimize the code by using io_uring code and its new features. 
+The right usage of these features can be evaluated with `strace` to measure the number of system calls that are being spared. [4]
 
 In fact, io_uring developer Jens Axboe created a document [5] in 2023, presenting recipes for io_uring and networking. As Axboe points out in this document, simply replacing epoll with io_uring will work, but doing so "does not lead to an outcome that fully takes advantage of what io_uring offers". All of these features that could be used by pgagroal in different places, such as (a) batching, as networking can have dependent operations that can all be waited to be ready at the same time (such as accept followed by recv); (b) multi-shot, as networking can have recurring operations (again, accept and recv); or (c) socket state awareness. The usage of further features mentioned in this document should definitely be evaluated.
 
@@ -150,13 +147,37 @@ Since the processes do not interact, no concurrency control is needed.
 
 ### 2.2. Phase 2 Details
 
-With testing and profiling, I intend to establish a method to measure how the implementation of the event loop is evolving in comparison to previous pgagroal versions and to previous versions.
+With testing, I intend to establish rigorous methods for measuring whether the implementation of the new I/O layer is correct and how it is evolving during the refactoring phase.
 
-Tests could be conducted through testing frameworks in C or simply by evaluating the behavior with simulated Postgres client connections using shell scripts. A unit test framework can be selected from [9], for example, and this decision should be aligned with the community in a discussion on GitHub. The state of the implementation in Phase 1 should clarify what we should be testing and how we should approach these tests.
+I believe that the state of the experimental implementation in Phase 1 should clarify how we should test for correctness. I also believe, however, the performance tests are agnostic to the first implementation and could be designed even before Phase 1.
 
-Profiling could be conducted using Linux tools such as strace, gprof, and perf. The methodology for this will also need to be aligned with the community in a discussion on GitHub.
+For consistency in the approach, I propose defining tests in a posterior phase, after the Phase 1 implementation.
+
+#### 2.2.1. Functional Tests
+
+I propose the creation of tests using testing frameworks in C.
+A unit test framework can be selected from [9], for example, and this decision should be aligned with the community in a discussion on GitHub. 
+
+Testing the application should be followed by a coding period to fix any identified issues or rollback to the previous application state.
+
+The functional tests should be implemented right after the implementation of Phase 1 in order to ensure correctness and should be run after every refactoring after the first implementation to ensure that
+no regression in functionality appears.
+
+#### 2.2.2. Performance Tests
+
+Performance tests could be conducted using Linux tools such as `gprof`, and `perf`. 
+
+`gprof` may be the most useful after having a working version of the code, but before fully optimizing it. This tool is valuable for identifying how new features are affecting performance.
+
+`perf` is good for system level analysis, so it could be most useful at later stages of development.
 
 The profiling and testing should provide insights for further optimizations and improvements in the implementation.
+
+The specific benchmark criteria (performance metrics or KPIs) should be discussed with the community prior to the development of the strategy, but this should include attempts to measure latency, throughput, CPU usage, and memory footprint. In sum, we should be measuring for time and memory.
+
+Measuring resource utilization in this phase will enable the identification of bottlenecks in the code and places in the code where the new implementation can benefit from optimizations.
+
+The measurements made propose diving deeper into improvements that could be made to the simple event loop implementation of the previous phase. Here I intend to investigate the potential necessary changes in the structure of the main code, considering other optimizations (e.g., reducing system calls, investigating new features introduced in `io_uring_sqe` fields, kernel-side polling, cache performance, memory layout, vectorization).
 
 ## 3. Timeline
 
@@ -164,18 +185,18 @@ Below, I set a timeline for 22 weeks, considering this is a hard and large proje
 
 | Week       | Date             | Description |
 |------------|------------------|-------------|
-|1 & 2|May 01 - May 14|Community bonding period: Set up a call to know each other, discuss pgagroal's history and future, and talk about the specifics of this project. Begin Phase 1 with a discussion of the first design of the code.|
-|3 & 4|May 15 - May 28|Phase 1 for Linux: Start on the I/O Foundation by designing and implementing a simple io_uring loop for core I/O operations, marking the initial replacement of libev functionalities.|
-|5 & 6|May 29 - June 11|Phase 1 for Linux: Continue developing the I/O Foundation, refining the io_uring integration for I/O other than event loop, try to identify potential room for more advanced io_uring techniques.|
-|7 & 8|June 12 - June 25|Phase 1 for Linux: Finish the I/O Foundation by integrating advanced networking io_uring features.|
-||June 26 - July 09|Midterm evaluations and personal time. Planning to visit family during mid-year holidays, with limited availability but reachable via email.|
-|9 & 10|July 10 - July 23|Phase 1 for FreeBSD: Begin working on the I/O foundation for FreeBSD, focusing on integrating and adapting to FreeBSD's system specifics.|
-|11 & 12|July 24 - August 06|Phase 1 for FreeBSD: Continue developing the I/O foundation.|
-|13 & 14|August 07 - August 20|Phase 1 for FreeBSD: Finish the I/O Foundation, ensuring compatibility and efficiency.|
-|15 & 16|August 21 - September 03|Phase 2: Design and implement behavior tests and stress tests for the event loop replaced code to ensure functionality and stability.|
-|17 & 18|September 04 - September 17|Phase 2: Fix potential issues with the code found in previous weeks and expand tests if necessary.|
-|19 & 20|September 18 - October 01|Phase 2: Design and implement a strategy to profile code. Identify code bottlenecks and define a strategy to optimize code based on findings.|
-|21, 22, & 23|October 02 - October 22|Phase 2: Implement optimization strategies identified in the previous phase. Final testing of all implementations for both Linux and FreeBSD. Make sure everything is perfect.|
+|1 & 2|May 01 - May 14|**Community bonding period:** Set up a call to know each other, discuss pgagroal's history and future, and talk about the specifics of this project. Begin Phase 1 with a discussion of the first design of the code.|
+|3 & 4|May 15 - May 28|**Phase 1 for Linux:** Start on the I/O Foundation by designing and implementing a simple io_uring loop for core I/O operations, marking the initial replacement of libev functionalities. Refine the io_uring integration for I/O other than event loop, try to identify potential room for more advanced io_uring techniques.|
+|5 & 6|May 29 - June 11|**Phase 1 for Linux:** Finish the I/O Foundation by integrating advanced networking io_uring features.|
+|7 & 8|June 12 - June 25|**Phase 2 for Linux:** Design and implement functional tests to ensure functionality and stability. Fix potential issues with the code found during tests.|
+||June 26 - July 09|Midterm evaluations and planning personal time to visit family during mid-year holidays. I will have limited availability but I will be reachable via email.|
+|9 & 10|July 10 - July 23|**Phase 1 for FreeBSD:** Begin working on the I/O foundation for FreeBSD, focusing on integrating and adapting to FreeBSD's system specifics.|
+|11 & 12|July 24 - August 06|**Phase 1 for FreeBSD:** Finish the I/O Foundation. Search and experiment with advanced networking patterns and usage for kqueue that can benefit the implementation.|
+|13 & 14|August 07 - August 20|**Phase 2 for FreeBSD:** Design and implement functional tests to ensure functionality and stability. Fix potential issues with the code found during tests.|
+|15 & 16|August 21 - September 03|**Phase 2 for Linux & FreeBSD:** Design and implement a strategy for performance tests. |
+|17 & 18|September 04 - September 17|**Phase 2 for Linux:** Identify code bottlenecks and define a strategy to optimize code based on findings and implement them. |
+|19 & 20|September 18 - October 01|**Phase 2 for FreeBSD:**  Identify code bottlenecks and define a strategy to optimize code based on findings and implement them. |
+| 21, 22, & 23|October 02 - October 22|**Phase 2 for Linux & FreeBSD:** Evaluate if expanding tests are necessary and, if so, implement more tests. Final testing of all implementations for both Linux and FreeBSD. Make sure everything is perfect.|
 |24 & 25|October 23 - November 04|Finalize documentation, prepare a comprehensive report summarizing the development process, challenges faced, solutions implemented, and future work directions. Ensure all code is well-commented, and the repository is organized for easy navigation. Final preparations for project submission.|
 ||November 04|Deadline to submit final work product and final evaluation.|
 
