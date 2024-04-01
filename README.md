@@ -12,13 +12,13 @@
 
 ## 1. Synopsis
 
-The project consists of replacing the I/O Layer of pgagroal, today highly dependant on libev library, for a pgagroal's own implementation of this I/O Layer. The so called I/O Layer is an event loop (ev) abstracted by libev. 
+The project consists of replacing the I/O Layer of pgagroal, today highly dependant on libev library, for a pgagroal's own implementation of this I/O Layer. The so called I/O Layer is an event loop abstracted by libev. 
 
-The motivation behind this project is because libev is not being maintained any longer. Therefore pgagroal needs an efficient (i.e. maintainable, reliable, fast, lightweight, secure and scalable) implementation of an ev that can be maintained by the pgagroal community.
+The motivation behind this project is because libev is not being maintained any longer. Therefore pgagroal needs an efficient (i.e. maintainable, reliable, fast, lightweight, secure and scalable) implementation of an event loop that can be maintained by the pgagroal community.
 
 Currently, pgagroal depends on libev to (a) watch for incomming read/write requests from its connections in a non-blocking fashion; (b) launch timer events; and (c) watch signals.
 
-In Linux, these functionalities may be optimally achieved by using io_uring (introduced in Linux kernel 5.1). io_uring is a communication channel between a system's application and the kernel by providing an interface to receive notifications when I/O is possible on file descriptors. io_uring is accessible to system applications through liburing, which is a library that contains helpers for setup of io_uring. A successful Linux implementation of an efficient ev for pgagroal necessarilly utilizes io_uring -- as well as other Linux I/O interfaces (e.g. stdio) -- for efficient I/O. For cases where io_uring may fall short, Linux has other options that may replace it, such as epoll.
+In Linux, these functionalities may be optimally achieved by using io_uring (introduced in Linux kernel 5.1). io_uring is a communication channel between a system's application and the kernel by providing an interface to receive notifications when I/O is possible on file descriptors. io_uring is accessible to system applications through liburing, which is a library that contains helpers for setup of io_uring. A successful Linux implementation of an efficient event loop for pgagroal necessarilly utilizes io_uring -- as well as other Linux I/O interfaces (e.g. stdio) -- for efficient I/O. For cases where io_uring may fall short, Linux has other options that may replace it, such as epoll.
 
 In FreeBSD, these functionalities may be optimally achieved by using kqueue (introduced in FreeBSD 4.1). kqueue is an event notification interface that allows monitoring of multiple file descriptors. Like io_uring in Linux, kqueue enables non-blocking I/O operations, but it is specifically designed to fit into the FreeBSD kernel's event-driven architecture.
 
@@ -26,14 +26,14 @@ The objective of this proposal is to provide a plan to achieve such efficient im
 
 ## 2. Proposal
 
-As mentioned before, my objectives with this proposal are to implement an efficient ev for pgagroal. 
+As mentioned before, my objectives with this proposal are to implement an efficient event loop for pgagroal. 
 In order to accomplish this, I could benefit from dividing the implementation into two phases: (a) Experimentation (Phase 1); (b) Continuous Implementation and Profiling (Phase 2).
 
-For *Phase 1*, I propose the implementation of an interface containing a simple abstraction for an ev (with io_uring, for Linux, and with kqueue, for FreeBSD).
+For *Phase 1*, I propose the implementation of an interface containing a simple abstraction for an event loop (with io_uring, for Linux, and with kqueue, for FreeBSD).
 
-The result of this first phase would be a maintainable and small footprint ev that suffices for pgagroal specific uses, potentially (but not necessarily) resulting in minimal changes in functions and behavior of the main code -- as the implementation would work as an interface for watching file descriptors, timers, and signals.
+The result of this first phase would be a maintainable and small footprint event loop that suffices for pgagroal specific uses, potentially (but not necessarily) resulting in minimal changes in functions and behavior of the main code -- as the implementation would work as an interface for watching file descriptors, timers, and signals.
 
-For *Phase 2*, I propose the definition of tests and profiling (for speed and memory) for pgagroal's new ev, done in different settings, enabling comparison between previous and future versions.
+For *Phase 2*, I propose the definition of tests and profiling (for speed and memory) for pgagroal's new event loop, done in different settings, enabling comparison between previous and future versions.
 
 The idea here is to accurately measure resource utilization for pgagroal in areas we believe are important, so that we can ensure that the new implementation of pgagroal is actually going in the right direction.
 
@@ -41,7 +41,7 @@ The specific benchmark criteria (performance metrics) should be discussed with t
 
 Measuring resource utilization will enable the identification of bottlenecks and places where pgagroal can benefit from optimizations while allowing for the measurement of potential optimizations implementations.
 
-The measurements made propose diving deeper into improvements that could be made to the simple ev implementation of the previous phase. Here I intend to investigate the potential necessary changes in the structure of the main code, considering other optimizations (e.g., reducing system calls, investigating new features introduced in `io_uring_sqe` fields, kernel-side polling, cache performance, memory layout, vectorization).
+The measurements made propose diving deeper into improvements that could be made to the simple event loop implementation of the previous phase. Here I intend to investigate the potential necessary changes in the structure of the main code, considering other optimizations (e.g., reducing system calls, investigating new features introduced in `io_uring_sqe` fields, kernel-side polling, cache performance, memory layout, vectorization).
 
 ### 2.1. Phase 1 Details
 
@@ -51,9 +51,9 @@ The Phase 1 implementation depends on me knowing how io_uring and kqueue work, a
 
 io_uring is a communication channel between the application and the kernel, functioning as an asynchronous I/O interface. It works by placing I/O submission events and I/O completion events into two queues (ring buffers) that are shared between the application and kernel. io_uring has the potential to reduce system calls and implement asynchronous I/O. Much of the complexity of managing these data structures is abstracted by a library called liburing. [1] Documentation on this library can be found at [2].
 
-All of pgagroal's I/O layer can benefit from io_uring operations, such as writing to and reading from sockets, but the networking ev part of pgagroal can also benefit from io_uring.
+All of pgagroal's I/O layer can benefit from io_uring operations, such as writing to and reading from sockets, but the networking event loop part of pgagroal can also benefit from io_uring.
 
-A simple webserver example can be found at [3], and pgagroal's ev can use the same structure.
+A simple webserver example can be found at [3], and pgagroal's event loop can use the same structure.
 
 io_uring can be used in the server as a replacement for epoll, but this is not as straightforward as it may seem, and there is a lot of room to further optimize the code by using io_uring code and its new features. [4]
 
@@ -150,7 +150,7 @@ Since the processes do not interact, no concurrency control is needed.
 
 ### 2.2. Phase 2 Details
 
-With testing and profiling, I intend to establish a method to measure how the implementation of the ev is evolving in comparison to previous pgagroal versions and to previous versions.
+With testing and profiling, I intend to establish a method to measure how the implementation of the event loop is evolving in comparison to previous pgagroal versions and to previous versions.
 
 Tests could be conducted through testing frameworks in C or simply by evaluating the behavior with simulated Postgres client connections using shell scripts. A unit test framework can be selected from [9], for example, and this decision should be aligned with the community in a discussion on GitHub. The state of the implementation in Phase 1 should clarify what we should be testing and how we should approach these tests.
 
@@ -166,13 +166,13 @@ Below, I set a timeline for 22 weeks, considering this is a hard and large proje
 |------------|------------------|-------------|
 |1 & 2|May 01 - May 14|Community bonding period: Set up a call to know each other, discuss pgagroal's history and future, and talk about the specifics of this project. Begin Phase 1 with a discussion of the first design of the code.|
 |3 & 4|May 15 - May 28|Phase 1 for Linux: Start on the I/O Foundation by designing and implementing a simple io_uring loop for core I/O operations, marking the initial replacement of libev functionalities.|
-|5 & 6|May 29 - June 11|Phase 1 for Linux: Continue developing the I/O Foundation, refining the io_uring integration for I/O other than ev loop, try to identify potential room for more advanced io_uring techniques.|
+|5 & 6|May 29 - June 11|Phase 1 for Linux: Continue developing the I/O Foundation, refining the io_uring integration for I/O other than event loop, try to identify potential room for more advanced io_uring techniques.|
 |7 & 8|June 12 - June 25|Phase 1 for Linux: Finish the I/O Foundation by integrating advanced networking io_uring features.|
 ||June 26 - July 09|Midterm evaluations and personal time. Planning to visit family during mid-year holidays, with limited availability but reachable via email.|
 |9 & 10|July 10 - July 23|Phase 1 for FreeBSD: Begin working on the I/O foundation for FreeBSD, focusing on integrating and adapting to FreeBSD's system specifics.|
 |11 & 12|July 24 - August 06|Phase 1 for FreeBSD: Continue developing the I/O foundation.|
 |13 & 14|August 07 - August 20|Phase 1 for FreeBSD: Finish the I/O Foundation, ensuring compatibility and efficiency.|
-|15 & 16|August 21 - September 03|Phase 2: Design and implement behavior tests and stress tests for the ev loop replaced code to ensure functionality and stability.|
+|15 & 16|August 21 - September 03|Phase 2: Design and implement behavior tests and stress tests for the event loop replaced code to ensure functionality and stability.|
 |17 & 18|September 04 - September 17|Phase 2: Fix potential issues with the code found in previous weeks and expand tests if necessary.|
 |19 & 20|September 18 - October 01|Phase 2: Design and implement a strategy to profile code. Identify code bottlenecks and define a strategy to optimize code based on findings.|
 |21, 22, & 23|October 02 - October 22|Phase 2: Implement optimization strategies identified in the previous phase. Final testing of all implementations for both Linux and FreeBSD. Make sure everything is perfect.|
