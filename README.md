@@ -20,7 +20,7 @@ Currently, pgagroal depends on libev to (a) watch for incomming read/write reque
 
 In Linux, these functionalities may be optimally achieved by using io\_uring (feature introduced in Linux kernel 5.1). io\_uring is a communication channel between a system's application and the kernel by providing an interface to receive notifications when I/O is possible on file descriptors. io\_uring is accessible to system applications through liburing, which is a library that contains helpers for setup of io\_uring. A successful Linux implementation of an efficient ev for pgagroal necessarilly utilizes io\_uring -- as well as other Linux I/O interfaces (e.g. stdio) -- for efficient I/O. For cases where io\_uring may fall short, Linux has other options that may replace it, such as epoll.
 
-In FreeBSD, these functionalities may be optimally achieved by using kqueue, *an event notification interface that allows efficient monitoring of multiple file descriptors. Like io_uring in Linux, kqueue enables non-blocking I/O operations, but it is specifically designed to fit into the FreeBSD kernel's event-driven architecture.* [todo: COMPLETE CONFIRM]
+In FreeBSD, these functionalities may be optimally achieved by using kqueue. kqueue is an event notification interface that allows monitoring of multiple file descriptors. Like io_uring in Linux, kqueue enables non-blocking I/O operations, but it is specifically designed to fit into the FreeBSD kernel's event-driven architecture.
 
 The objective of this proposal is to provide a plan to achieve such efficient implementations in both Linux and FreeBSD, which shall be, at the end of this program, at least as efficient as libev, but fully maintained and controlled by the pgagroal community.
 
@@ -46,7 +46,7 @@ The measurements made in propose diving deeper into improvements that could be m
 
 ### 2.1. Phase 1 Details
 
-The Phase 1 implementation depends on me knowing how io\_uring and kqueue work, and me knowing how libev functions are used throughout the code, so I know how they could be replaced.
+The Phase 1 implementation depends on me knowing how io\_uring and kqueue work, and me knowing how libev functions are used throughout the code, so I know how they will be replaced.
 
 #### 2.1.1. Linux implementation
 
@@ -54,18 +54,18 @@ io\_uring is a communication channel between the application and the kernel, fun
 It works by placing I/O submission events and I/O completion events into two queues (ring buffers) that are shared between the application and kernel.
 io\_uring has the potential to reduce system calls and implement asynchronous I\O.
 Much of the complexity of managing these data structures is abstracted by a library called liburing.
-[6a59b]
-Documentation on this library can be found at [cc65b].
+[1]
+Documentation on this library can be found at [2].
 
 All of pgagroal's I/O layer can benefit from io\_uring operations, such as writing to and reading from sockets, 
 but the networking ev part of pgagroal can also benefit from io\_uring.
 
-A simple webserver example can be found at [eac27], and pgagroal's ev can use the same structure.
+A simple webserver example can be found at [3], and pgagroal's ev can use the same structure.
 
 io\_uring can be used in the server as a replacement of epoll, but this is not as straightforward as it may seem and there is a lot of room to 
-further optimize the code by using io\_uring code and its new features. [ca83a]
+further optimize the code by using io\_uring code and its new features. [4]
 
-In fact, io\_uring developer Jens Axboe created a document [11c26] in 2023, presenting recipes for io\_uring and networking.
+In fact, io\_uring developer Jens Axboe created a document [5] in 2023, presenting recipes for io\_uring and networking.
 As Axboe points out in this document, simply replacing io\_uring for epoll will work, but doing this "does not lead to an outcome that fully takes advantage of what io_uring offers".
 All of these features that could be used by pgagroal in different places, such as 
 (a) batching, as networking can have dependant operations that can all be waited to be ready at the same time (such as accept followed by recv);
@@ -76,30 +76,49 @@ The usage of further features mentioned in this document should definitely be ev
 On another note, features continue to be implemented into io\_uring, which makes it an exciting feature to add to a project.
 As an example, one feature particularly interesting for pgagroal's process model is `io_uring_spawn`, presented in 2022.
 This feature could potentially reduce the process spawning time, but it still is under active development.
-[f38aa]
+[6]
 
 #### 2.1.2. FreeBSD Implementation
 
-*For FreeBSD, the transition to a native I/O solution centers around kqueue. 
-Similar to io_uring, kqueue enables non-blocking I/O handling but is tailored to the FreeBSD operating system's specifics. 
-It supports a wide range of event types, including file descriptors readiness, timers, and process and signal monitoring, making it a versatile tool for pgagroal's needs.*
+For FreeBSD, the transition to a native I/O solution centers around kqueue. 
+Similar to io_uring, kqueue enables non-blocking I/O handling by using queues shared by the kernel and userspace, and by supporting kevent for communication. 
+It supports a wide range of event types, specified as *filters*, including file descriptors readiness, timers, and process and signal monitoring.
 
-*Key to the FreeBSD implementation will be leveraging kqueue's strengths, such as efficient timer management and fine-grained control over event monitoring, to optimize pgagroal's event-driven architecture. 
-Again, the goal is to achieve a level of efficiency and scalability comparable to or exceeding the current libev-based implementation, tailored specifically to FreeBSD's system characteristics.*
+This document [7] contains the API specification for kqueue, as well as an example of an event handling.
+The specific documentation can be found at [8].
+As the author of the document explains, and similar to io\_uring, simply adapting the event loop to work with kqueue as it would with poll will not render the best results and
+applications should be rewritten to use the application.
+
+kqueue is targeted specifically at I/O multiplexing and, differently from io\_uring, kqueue should be solely used for the event library.
+I could not find reference of any features designed to enhance networking usability, such as with Axboe's document, but in the above mentioned document there is enough examples to implement for pgagroal's needs.
+
+Key to the FreeBSD implementation will be leveraging kqueue's strengths, such as efficient timer management and fine-grained control over event monitoring, to optimize pgagroal's event-driven architecture. 
 
 #### 2.1.3. Implementation Details
 
-As stated before, the replacement of pgagroal's I/O layer will mainly mean creating a new ev loop.
+As stated above, the replacement of pgagroal's I/O layer will mainly mean creating a new event loop for pgagroal's, and may require a redesign of the existing code, 
+because of how these event API's are designed.
+This should happen in the main.c, worker.c, pipeline.c, prometheus.c, the respective headers, and potentially others files. 
+They all use libev structs and functions for I/O and interacting with an event loop.
+Therefore, their code will be redesigned to work with the new format.
 
-Although some steps that involve this loop should only be slightly modified at first glance, allowing for keeping the original design, the main code, worker code, pipeline code,
-prometheus code, and potentially others, all have mentions to libev structs and functions.
-Therefore, their code will be redesigned to work with the new ev loop.
+Since it is intended for pgagroal to support Linux and FreeBSD, it is evident that pgagroal could benefit from wrapping the same interface for each implementation and using the same interface throughout the code.
+Nevertheless, maintaining the same interface for both Linux and FreeBSD seems unatainable given the differences of both APIs, despite their similarities (both have notification event data structures shared between kernel and userspace). 
+The implementation, thus, would have to :
 
-Since it is intended for pgagroal to support Linux and FreeBSD, pgagroal could benefit from wrapping the same interface for each implementation and using the same interface throughout the code (`io.c` / `io.h`).
-Nevertheless, maintaining the same interface for both Linux and FreeBSD should not come as a burden to performance, and thus this option should be further discussed with the community when the moment comes.
-I am still unsure, however, how attainable this is, giving io\_uring and kqueue differences, as can be shown in the ideas for implementation below.
+```c
+#ifdef __linux__
+...
+#elif defined(__FreeBSD__)
+...
+#endif
+```
 
-The following details of how the ev layer can be abstracted.
+Therefore, what may happen is the creation of different function abstractions for each implementation and the usage of such abstractions throughout the code to not clutter the main code.
+These abstractions would be defined in the same files and used thruout the code.
+This is an initial idea and due to the complexity of the API usage this may not be attainable either.
+
+However, details in their implementations can be provided for some of the required features, as explored below.
 
 ##### Main Loop
 ```c
@@ -108,46 +127,50 @@ void ev_io_init();
 void ev_loop();
 ```
 
-**Linux implementation.**
-The implementation is straightforward, with `io_uring_wait_cqe` wrapped around a loop and a call to the `cqe->user_data` that can potentially hold a callback.
+>Linux implementation.
+The implementation is straightforward, with `io_uring_wait_cqe` wrapped around a loop and a call to the `cqe->user_data` that can potentially hold a struct containing a callback.
 Every process should have its own loop and the loop could be created as soon as the process is forked.
 
-**FreeBSD implementation.** 
-*For FreeBSD, the kqueue event notification system will serve as the backbone. 
-Kqueue's ability to monitor a wide variety of event types makes it an ideal candidate for pgagroal's event handling. 
-The implementation will mirror the Linux approach in structure but will utilize kqueue-specific system calls to manage events. 
-This includes the use of kevent to wait for and dispatch events within the event loop.*
+>FreeBSD implementation.
+The implementation should also be straightforward, create a kqueue and set up a monitoring event for readability on the specified file descriptors, and then enter an infinite loop.
+When an event is detected, it checks for errors and, if nothing happens, determines the type of event (readable or writable) before invoking the callback function associated with the watcher. 
 
-##### Event Periodic Handling
+##### Periodic Event Handling
 ```c
 struct ev_periodic;
 void ev_periodic_init();
 void ev_periodic_start();
 ```
-These struct and functions work by issuing periodic callbacks in regular intervals [todo complete].
+These struct and functions work by issuing periodic callbacks in regular intervals.
 
-**Linux implementation.** 
+>Linux implementation.
 These could be accomplished with timeout commands, with `io_uring_prep_timeout`, but this approach should be further evaluated. 
 The upside here is to keep the simplicity in implementation with io\_uring.
 Since everything is going to be wrapped around a while loop and I/O will wait on cqes, timeouts can be abstracted to work as periodic task (isn't this all they are anyways?).
 
-**FreeBSD implementation.**
-*FreeBSD's implementation will leverage kqueue's timer events to achieve similar periodic functionality. Setting up timer events in kqueue involves specifying EVFILT_TIMER filters in kevent calls, allowing pgagroal to execute periodic tasks effectively within the event loop framework.*
+>FreeBSD implementation.
+FreeBSD's implementation will leverage kqueue's timer events to achieve similar periodic functionality. 
+Setting up timer events in kqueue involves specifying EVFILT_TIMER filters in kevent calls, allowing pgagroal to execute periodic tasks effectively within the event loop.
 
-##### Watchers
+##### Signal Watchers
+```c
+struct ev_signal;
+void ev_signal_init();
+```
+>Linux implementation.
+This can be accomplished by using `signalfd` along with io\_uring. 
+With this we can handle signal events in the same asynchronous event loop used for I/O operations.
 
+>FreeBSD implementation.
+kqueue can monitor signal events directly, without needing a separate file descriptor, just by leveraging `EVFILT_SIGNAL` as the filter.
 
 ##### Fork Handling
 ```c
 void ev_fork_loop();
 ```
 This function is called whenever a fork() call is made, so the ev is duplicated.
-
-**Linux implementation.**
-With io\_uring there is a need to duplicate the ev, so this call will create new ring structures.
-
-**FreeBSD implementation.**
-FreeBSD's approach to handling forked processes with kqueue is more straightforward. Since kqueue file descriptors behave similarly to other file descriptors across forks, minimal additional setup is required. However, careful management of event filters and event loop re-initialization in the child process may be necessary to ensure correct operation post-fork.
+In both cases the implementation is based on reinitializing the event loop and taking care to not mess with the parent's event loop.
+Since the process do not interact, no concurrency control is needed.
 
 
 ### 2.2. Phase 2 Details
@@ -156,7 +179,7 @@ FreeBSD's approach to handling forked processes with kqueue is more straightforw
 With testing and profiling I intend to achieve a way to measure how the implementation of the ev is evolving in comparison to previous pgagroal versions and to previous versions.
 
 Tests could be achieved through testing frameworks in C or just by testing the behaviour with simulated postgres client connections as shell scripts.
-An unit test framework can be decided from [a6a94], for example, and it should be aligned with the community in a discussion on GitHub.
+An unit test framework can be decided from [9], for example, and it should be aligned with the community in a discussion on GitHub.
 The state of the implementation in Phase 1 should make it more clear what we should be testing and how we should be testing.
 
 Profiling could be achieved through the usage of linux tools such as strace, gprof and perf. 
@@ -190,11 +213,13 @@ I try to leave room for flexibility in the timeline to accomodate unexpected cha
 
 ## 4. References
 
-[ca83a] https://developers.redhat.com/articles/2023/04/12/why-you-should-use-iouring-network-io <br>
-[cc65b] https://unixism.net/<br>
-[6a59b] https://www.youtube.com/watch?v=-5T4Cjw46ys<br>
-[5dba7] <br>
-[11c26] https://github.com/axboe/liburing/wiki/io_uring-and-networking-in-2023<br>
-[eac27] https://unixism.net/loti/tutorial/webserver_liburing.html<br>
-[f38aa] https://lwn.net/Articles/908268/<br>
-[a6a94] https://stackoverflow.com/questions/65820/unit-testing-c-code<br>
+[1] https://www.youtube.com/watch?v=-5T4Cjw46ys<br>
+[2] https://unixism.net/<br>
+[3] https://unixism.net/loti/tutorial/webserver_liburing.html<br>
+[4] https://developers.redhat.com/articles/2023/04/12/why-you-should-use-iouring-network-io <br>
+[7] https://people.freebsd.org/~jlemon/papers/kqueue.pdf<br>
+[5] https://github.com/axboe/liburing/wiki/io_uring-and-networking-in-2023<br>
+[6] https://lwn.net/Articles/908268/<br>
+[8] https://man.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2<br>
+[9] https://stackoverflow.com/questions/65820/unit-testing-c-code<br>
+
