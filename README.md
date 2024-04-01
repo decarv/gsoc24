@@ -75,9 +75,9 @@ As stated above, the replacement of pgagroal's I/O layer will primarily involve 
 Since it is intended for pgagroal to support both Linux and FreeBSD, it is clear that pgagroal could benefit from wrapping the same interface for each implementation and using this interface throughout the code. Nevertheless, maintaining the same interface for both Linux and FreeBSD seems unattainable given the differences in both APIs, despite their similarities (both have notification event data structures shared between kernel and userspace). The implementation, thus, would have to follow the recipe:
 
 ```c
-#ifdef __linux__
+#ifdef HAVE_LINUX
 ...
-#elif defined(__FreeBSD__)
+#elif HAVE_FREEBSD
 ...
 #endif
 ```
@@ -100,7 +100,7 @@ Linux implementation.
 The implementation is straightforward, with `io_uring_wait_cqe` wrapped around a loop and a call to the `cqe->user_data` that can potentially hold a struct containing a callback. Every process should have its own loop, and the loop could be created as soon as the process is forked.
 
 FreeBSD implementation.
-The implementation should also be straightforward: create a kqueue, set up a monitoring event for readability on the specified file descriptors, and then enter an infinite loop. When an event is detected, it checks for errors and, if none occur, determines the type of event (readable or writable) before invoking the callback function associated with the watcher.
+The implementation should also be straightforward: create a kqueue, set up a monitoring event for readability on the specified file descriptors, and then enter an infinite loop. When an event is detected, determine the type of event (readable or writable) and invoke the callback function.
 
 ##### Periodic Event Handling
 
